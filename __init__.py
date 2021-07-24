@@ -10,6 +10,7 @@ class AWSWMod(Mod):
     @staticmethod
     def mod_load():
         run_linkfile('example.link')
+        run_linkfile('adine_cg.link')
 
     @staticmethod
     def mod_complete():
