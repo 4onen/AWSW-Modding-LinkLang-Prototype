@@ -11,6 +11,7 @@ class AWSWMod(Mod):
     def mod_load():
         run_linkfile('example.link')
         run_linkfile('adine_cg.link')
+        run_linkfile('loremipsum.link')
 
     @staticmethod
     def mod_complete():
