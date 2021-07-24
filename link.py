@@ -127,10 +127,22 @@ class Linker:
         subcommand = match.group(1)
         if arg is None:
             self.error("I expected an argument to the '%s' statement!"%match.group(0))
+
+        def find_show(imspec):
+            for node in renpy.game.script.all_stmts:
+                if isinstance(node, ast.Show) and ' '.join(node.imspec[0])==arg == imspec:
+                    return node
+        
+        def find_hide(imspec):
+            for node in renpy.game.script.all_stmts:
+                if isinstance(node, ast.Hide) and ' '.join(node.imspec[0])==arg == imspec:
+                    return node
         
         fn = {'label':modast.find_label
              ,'jump':modast.find_jump_target
              ,'menu':modast.find_menu
+             ,'show':find_show
+             ,'hide':find_hide
              ,'say':modast.find_say
              ,'python':modast.find_python_statement
              }.get(subcommand,lambda _:self.error("Unrecognized 'find' target: %r"%subcommand))
@@ -166,8 +178,8 @@ class Linker:
                 {'say':lambda x: isinstance(x,ast.Say) and x.what==arg
                 ,'if':lambda x: isinstance(x,ast.If) and any((e[0]==arg for e in x.entries))
                 ,'menu':lambda x: isinstance(x,ast.Menu) and any((e[0]==arg for e in x.items))
-                ,'show':lambda x: isinstance(x,ast.Show) and ''.join(x.imspec[0])==arg
-                ,'hide':lambda x: isinstance(x,ast.Hide) and ''.join(x.imspec[0])==arg
+                ,'show':lambda x: isinstance(x,ast.Show) and ' '.join(x.imspec[0])==arg
+                ,'hide':lambda x: isinstance(x,ast.Hide) and ' '.join(x.imspec[0])==arg
                 ,'call':lambda x: isinstance(x,ast.Call) and x.label==arg
                 ,'scene':lambda x: isinstance(x,ast.Scene) and x.imspec is not None and ''.join(x.imspec[0])==arg
                 ,'label':lambda x: isinstance(x,ast.Label) and x.name==arg
@@ -312,7 +324,7 @@ class Linker:
             self.error("I can't go the next node after a non-existent current node! Use a 'find' type statement to find a node before trying this command.")
         self.context['here'] = self.context['here'].next
 
-find_regex = re.compile(r'find\s+(label|jump|menu|say|python)')
+find_regex = re.compile(r'find\s+(label|jump|menu|show|hide|say|python)')
 search_regex = re.compile(r'search\s+(say|if|menu|show|hide|call|scene|label)')
 call_regex = re.compile(r'call')
 jump_regex = re.compile(r'jump')
