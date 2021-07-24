@@ -1,7 +1,4 @@
-from modloader import modast, modinfo
 from modloader.modclass import Mod, loadable_mod
-from modloader.modgame import base as ml
-
 from link import run_linkfile
 
 @loadable_mod
