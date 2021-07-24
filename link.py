@@ -139,6 +139,9 @@ class Linker:
         if self.context[storeto] is None:
             self.error("I couldn't find any %r with content %r in the Ren'Py tree!"%(subcommand,arg))
 
+        if storeto is not 'here':
+            self.context['here']=self.context[storeto]
+
     def stmt_search(self,match,arg,source='here',storeto='here',depth=200):
         subcommand = match.group(1)
         fromnode = self.var(source)
@@ -174,6 +177,9 @@ class Linker:
             self.context[storeto] = modast.search_for_node_with_criteria(fromnode,criteria,max_depth=depth)
             if self.context[storeto] == None:
                 self.error("I couldn't find a node matching type %r with content %r starting from %r:%r"%(subcommand,arg,source,fromnode))
+
+        if storeto is not 'here':
+            self.context['here']=self.context[storeto]
     
     def stmt_jump(self,_,arg,source='here'):
         sourcenode = self.var(source)
@@ -216,6 +222,9 @@ class Linker:
                 self.error("I couldn't find the condition %r in the if statement %r!"%(arg,n))
         else:
             self.error("I can't branch into a %r!"%type(n))
+
+        if storeto is not 'here':
+            self.context['here']=self.context[storeto]
     
     def stmt_change(self,_,arg,to=None):
         if 'here' not in self.context:
