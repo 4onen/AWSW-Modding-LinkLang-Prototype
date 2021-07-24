@@ -114,7 +114,7 @@ class Linker:
                 if match:
                     arg,kwargs = self.parse_args(stmt[match.end(0):].strip(),keywords)
                     func(self,match,arg,**kwargs)
-                    modloader.modgame.sprnt("Successfully parsed %r"%stmt)
+                    # modloader.modgame.sprnt("Successfully parsed %r"%stmt)
                     break
             else:
                 self.error("I couldn't recognize the statement. Are you sure it's on the list of supported commands?")
