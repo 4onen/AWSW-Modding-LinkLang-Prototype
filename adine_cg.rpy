@@ -1,3 +1,9 @@
+init:
+    find label seccont
+    # search scene chap1
+    # search show cgseb
+    search say "Welcome to our establishment. My name's Adine, and I'll be your waitress today. What can I bring you two?" for 1000
+    callto link_example_show_cg_adine
 
 label link_example_show_cg_adine:
     scene black with dissolve

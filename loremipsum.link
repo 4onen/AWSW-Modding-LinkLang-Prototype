@@ -1,8 +1,0 @@
-find hide meetingipsum
-search if
-branch else:
-    search say "You don't mind if I take a seat, right?"
-    call link_example_loremipsum_knoweachother
-
-search say "I'm sorry, [player_name]. This is my roommate and long-time best friend, Ipsum."
-call link_example_loremipsum_dontknoweachother

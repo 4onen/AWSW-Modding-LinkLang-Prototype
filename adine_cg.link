@@ -1,3 +1,0 @@
-find label seccont
-search say "Welcome to our establishment. My name's Adine, and I'll be your waitress today. What can I bring you two?" for 1000
-call link_example_show_cg_adine
