@@ -6,8 +6,14 @@ python early:
         from renpy.parser import Lexer
 
         hn = 'linkmod_here_node'
-        bn = 'linkmod_branch_node'
-        hns = 'linkmod_here_node_stack'
+
+        def node_print_formatter(n):
+            return "\n%r\nat line %u of file '%s'"%(n, n.linenumber, n.filename)
+        
+        def set_herenode(n):
+            # sprnt("Herenode set: %s"%node_print_formatter(n))
+            renpy.python.store_dicts["store"][hn] = n
+
 
         def parse_image_name_forgiving(l,keywords=[]):
             cp = l.checkpoint()
@@ -154,7 +160,7 @@ python early:
                         if n is None:
                             renpy.error("I couldn't find a node matching type %r with content \n    %r\n starting from %r"%(ls.typ,ls.content,fromnode))
 
-                renpy.python.store_dicts["store"][hn] = n
+                set_herenode(n)
                 if ls.storeto is not None:
                     renpy.python.store_dicts["store"][ls.storeto] = n
 
@@ -250,11 +256,12 @@ python early:
                     renpy.ast.statement_name('block statement')
 
                     if self.previous_herenode is not None:
-                        renpy.python.store_dicts["store"][hn] = self.previous_herenode
+                        set_herenode(self.previous_herenode)
                         self.previous_herenode = None
                     else:
                         renpy.ast.next_node(self.block[0])
                         n = renpy.python.store_dicts["store"].get(hn,None)
+                        found = None
                         self.previous_herenode = n
                         if n is None:
                             renpy.error("The current node must already be defined to descend into a branch. Try running a 'find' in this file first!")
@@ -264,18 +271,18 @@ python early:
                             choice = ml.get_menu_hook(n).get_item(self.condition)
                             if choice is None:
                                 renpy.error("I couldn't find a menu item labeled %r in the menu %r!"%(self.condition,n))
-                            n = choice[2][0]
+                            found = choice[2][0]
                         elif isinstance(n,renpy.ast.If):
                             arg = self.condition if self.condition is not None else 'True'
                             for e in n.entries:
                                 if e[0] == arg:
-                                    n = e[1][0]
+                                    found = e[1][0]
                                     break
-                            else:
+                            if found is None:
                                 renpy.error("I couldn't find the condition %r in the if statement %r!"%(self.condition,n))
                         else:
                             renpy.error("I can't branch into a %r!"%type(n))
-                        renpy.python.store_dicts["store"][hn] = n
+                        set_herenode(found)
             
             @renpy.parser.statement("branch")
             def parse(l, loc):
@@ -287,9 +294,14 @@ python early:
                 l.require(str(':'))
                 l.expect_eol()
                 l.expect_block("branch statement")
-                block = renpy.parser.parse_block(l.subblock_lexer())
+                block = renpy.parser.parse_block(l.subblock_lexer(True))
                 l.advance()
-                return Branch(loc,condition,block)
+
+                rv = Branch(loc, condition, block)
+                if not l.init:
+                    rv = renpy.ast.Init(loc, [ rv ], 0)
+
+                return rv
         linkmod_branch()
 
         def linkmod_add():
@@ -365,7 +377,7 @@ python early:
                             n.entries.remove(e)
                             n.entries.append((newcondition,e[1]))
                             return
-                    self.error("I couldn't find the condition %r in the if statement %r!"%(condition,n))
+                    renpy.error("I couldn't find the condition %r in the if statement %s!"%(condition,node_print_formatter(n)))
                 else:
                     renpy.error("I can't 'change' a branch on a %r!"%type(n))
             
