@@ -61,11 +61,11 @@ Language reference:
         + `for <number>` sets how many nodes forward the search will attempt to look before raising an error. (Default: 200)
     + Subcommands: `say`,`if`,`menu`,`show`,`hide`,`scene`,`label`
         + These are the same as in `find ...`, but start from the current node and step forward with `node.next`. This means, instead of searching the whole Ren'Py AST, it will only search the current scene! The downside is these `search ...` commands will step _over_ if statements and menus. To look inside them, see `branch`.
-+ `call <label>` - Links the current node to call a given label, as if by inserting a `call` statement at that spot.
++ `callto <label>` - Links the current node to call a given label, as if by inserting a `call` statement at that spot.
     + Optional arguments:
         + `from <variable>` link the call from a node that is not the current node.
         + `return <variable>` when `return` is called inside the called label, will return to the node stored in *variable* rather than to the next node.
-+ `jump <label>` - Links the current node to jump to a given label, as if by inserting a `jump` statement at that spot.
++ `jumpto <label>` - Links the current node to jump to a given label, as if by inserting a `jump` statement at that spot.
     + Optional arguments:
         + `from <variable>` link the jump from a node that is not the current node.
 + `branch <option>` - Descend into a branch of an If statement or Menu. Sets the current node to the first node inside that branch.
