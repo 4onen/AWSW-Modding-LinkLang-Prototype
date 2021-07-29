@@ -4,14 +4,12 @@
 
 Well, I'm not changing that, but I'm making the code much easier to understand! Here's the simplest possible mod with *LinkLang*:
 
-*short_example.link*
-```
-find say "I thought they sent you away after everything that's going on."
-call short_example_mod_target
-```
-
 *short_example.rpy*
-```
+```rpy
+init:
+    find say "I thought they sent you away after everything that's going on."
+    callto short_example_mod_target
+
 label short_example_mod_target:
     c "It takes more than that to get rid of me!"
     return
@@ -30,7 +28,7 @@ class AWSWMod(Mod):
 
     @staticmethod
     def mod_load():
-        run_linkfile('short_example.link')
+        pass
 
     @staticmethod
     def mod_complete():
