@@ -28,7 +28,7 @@ init:
     link link_example_adine1_alt_greeting_labelback
 
     search if
-    change "persistent.adine1skip == True" to "False"
+    change "persistent.adine1skip == True" to inaccessible
 
     search say "Feel right at home. I better eat this before it gets cold." as eatbeforecold
     search say "I sat down at the table and started eating my food while Adine decided to take a seat opposite of myself."

@@ -5,6 +5,60 @@ python early:
         from modloader.modgame import sprnt
         from renpy.parser import Lexer
 
+        class CanHaveInitBlock(renpy.ast.Node): # Based on renpy.ast.While
+            __slots__ = ['block', 'executing_body']
+            def __init__(self, loc, block):
+                super(CanHaveInitBlock, self).__init__(loc)
+                self.block = block
+                self.executing_body = False
+            
+            def diff_info(self):
+                return (CanHaveInitBlock)
+            
+            def get_children(self, f):
+                f(self)
+                for i in self.block:
+                    i.get_children(f)
+            
+            def chain(self,next):
+                self.next = next
+                renpy.ast.chain_block(self.block, self)
+            
+            def replace_next(self, old, new):
+                renpy.ast.Node.replace_next(self,old,new)
+                if self.block and (self.block[0] is old):
+                    self.block.insert(0, new)
+            
+            def pre_execute(self):
+                pass
+            
+            def post_execute(self):
+                pass
+            
+            def execute(self):
+                renpy.ast.next_node(self.next)
+                if not renpy.game.context().init_phase:
+                    return
+                elif self.executing_body:
+                    if self.post_execute():
+                        renpy.ast.next_node(self.block[0])
+                    else:
+                        self.executing_body = False
+                elif (not self.pre_execute()) and self.block:
+                    renpy.ast.next_node(self.block[0])
+                    self.executing_body = True
+
+            def predict(self):
+                return [ self.block[0], self.next ]
+            
+            def scry(self):
+                rv = node.scry(self)
+                rv._next = None
+                return rv
+            
+            def restructure(self,callback):
+                callback(self.block)
+
         hn = 'linkmod_here_node'
 
         def node_print_formatter(n):
@@ -13,7 +67,36 @@ python early:
         def set_herenode(n):
             # sprnt("Herenode set: %s"%node_print_formatter(n))
             renpy.python.store_dicts["store"][hn] = n
-
+        
+        def get_herenode(action,fromvar=hn):
+            n = renpy.python.store_dicts["store"].get(fromvar, None)
+            if n is None or not isinstance(n, renpy.ast.Node):
+                if fromvar==hn:
+                    renpy.error("The current node must already be defined to %s. Try running a 'find' in this file first!"%action)
+                else:
+                    renpy.error("I couldn't find a `renpy.ast.Node` in the variable %r!"%fromvar)
+            return n
+        
+        def parse_condition(l,allow_blank=False):
+            keywords=\
+                { 'inaccessible': 'False'
+                , 'False': 'False'
+                , 'always': 'True'
+                , 'True': 'True'
+                , 'else': 'True'
+                }
+            w = l.word()
+            if w is not None:
+                if w not in keywords:
+                    if w in ['true', 'false']:
+                        renpy.error("%r is not a valid condition keyword. Did you mean to capitalize it?"%w)
+                    renpy.error("%r is not a valid condition keyword."%w)
+                else:
+                    return keywords[w]
+            elif allow_blank:
+                return l.string()
+            else:
+                return l.require(l.string,"branch condition")
 
         def parse_image_name_forgiving(l,keywords=[]):
             cp = l.checkpoint()
@@ -29,175 +112,221 @@ python early:
                     segments.append(v)
                     continue
             return ' '.join(segments)
-            
 
-        def linkmod_findsearch():
+        def linkmod_commands_setting_new_herenode():
+            def find_show(imspec):
+                for node in renpy.game.script.all_stmts:
+                    if isinstance(node, renpy.ast.Show) and ' '.join(node.imspec[0])==imspec:
+                        return node
+            
+            def find_hide(imspec):
+                for node in renpy.game.script.all_stmts:
+                    if isinstance(node, renpy.ast.Hide) and ' '.join(node.imspec[0])==imspec:
+                        return node
+            
+            def find(typ,content):
+                fn =\
+                    {'label':modast.find_label
+                    ,'jump':modast.find_jump_target
+                    ,'menu':modast.find_menu
+                    ,'show':find_show
+                    ,'hide':find_hide
+                    ,'say':modast.find_say
+                    ,'python':modast.find_python_statement
+                    }.get(typ,lambda _:renpy.error("Unrecognized 'find' typ: %r"%(typ)))
+                return fn(content)
+            
+            def branch(n,content):
+                if isinstance(n,renpy.ast.Menu):
+                    if not content:
+                        renpy.error("I expected a menu item to branch to!")
+                    choice = ml.get_menu_hook(n).get_item(content)
+                    if choice is None:
+                        renpy.error("I couldn't find a menu item labeled %r in the menu %r!"%(content,n))
+                    return choice[2][0]
+                elif isinstance(n,renpy.ast.If):
+                    if not content:
+                        if len(n.entries)!=1:
+                            renpy.error("The `renpy.ast.If` I found here has more than one branch! Specify a condition to select a path.")
+                        else:
+                            return n.entries[0][1][0]
+                    else:
+                        for e in n.entries:
+                            if e[0] == content:
+                                return e[1][0]
+                        renpy.error("I couldn't find the condition %r in the if statement %r!"%(content,n))
+                else:
+                    renpy.error("I can't branch into a %r!"%type(n))
+
+            def search(typ,n,content,depth):
+                if not content:
+                    type = \
+                        {'say':renpy.ast.Say
+                        ,'if':renpy.ast.If
+                        ,'menu':renpy.ast.Menu
+                        ,'show':renpy.ast.Show
+                        ,'hide':renpy.ast.Hide
+                        ,'call':renpy.ast.Call
+                        ,'scene':renpy.ast.Scene
+                        ,'label':renpy.ast.Label
+                        ,'python':renpy.ast.Python
+                        }.get(typ,None)
+                    if type is None:
+                        renpy.error("Unrecognized 'search' target: %r"%type)
+                    found = modast.search_for_node_type(n,type,max_depth=depth)
+                else:
+                    criteria = \
+                        {'say':lambda x: isinstance(x,renpy.ast.Say) and x.what==content
+                        ,'if':lambda x: isinstance(x,renpy.ast.If) and any((e[0]==content for e in x.entries))
+                        ,'menu':lambda x: isinstance(x,renpy.ast.Menu) and any((e[0]==content for e in x.items))
+                        ,'show':lambda x: isinstance(x,renpy.ast.Show) and ' '.join(x.imspec[0])==content
+                        ,'hide':lambda x: isinstance(x,renpy.ast.Hide) and ' '.join(x.imspec[0])==content
+                        ,'call':lambda x: isinstance(x,renpy.ast.Call) and x.label==content
+                        ,'scene':lambda x: isinstance(x,renpy.ast.Scene) and x.imspec is not None and ''.join(x.imspec[0])==content
+                        ,'python':lambda x: isinstance(x,renpy.ast.Python) and x.code.source==content
+                        }.get(typ,None)
+                    if criteria is None:
+                        renpy.error("Unrecognized 'search' target: %r" % typ)
+                    found = modast.search_for_node_with_criteria(n,criteria,max_depth=depth)
+                
+                if found is None:
+                    renpy.error("Failed to locate a node from '%s' with content\n%r\nstarting from node %s\nand searching for %u nodes.\nPerhaps another mod interfered with the structure of this scene?"%(statement_text,content,node_print_formatter(n),depth))
+                return found
+
+            class HereNodeOp(CanHaveInitBlock):
+                __slots__ = ['typ','content','depth','fromvar','storeto','previous_herenode']
+                def __init__(self, loc, block, typ, content, depth = None, fromvar = None, storeto = None):
+                    super(HereNodeOp, self).__init__(loc, block)
+                    self.typ = typ
+                    self.content = content
+                    self.depth = depth
+                    self.fromvar = fromvar
+                    self.storeto = storeto
+                    self.previous_herenode = None
+                
+                def diff_info(self):
+                    return (HereNodeOp, self.typ, self.content, self.depth, self.fromvar, self.storeto)
+
+                def pre_execute(self):
+                    statement_text = ('branch' if self.typ == 'branch' else (('find ' if self.depth is None else 'search ')+self.typ))
+                    renpy.ast.statement_name("linkmod %s"%statement_text)
+
+                    n = renpy.python.store_dicts["store"].get(hn, None)
+                    self.previous_herenode = n
+                    found = None
+                    if (not self.depth and self.typ != 'branch') or (self.typ == 'label' and self.content): # 'find' statements
+                        found = find(self.typ,self.content)
+                    else: # 'search' or 'branch' statements
+                        if n is None:
+                            renpy.error("The current node must already be defined to\nrun a 'search' or 'branch' statement. Try running a 'find' in this file first!")
+                        elif self.typ == 'branch':
+                            found = branch(n,self.content)
+                        else:
+                            found = search(self.typ,n,self.content,self.depth)
+                    if found is None:
+                        renpy.error("Failed to '%s' with content %r"%(statement_text,self.content))
+                    else:
+                        set_herenode(found)
+                        if self.storeto is not None:
+                            renpy.python.store_dicts["store"][self.storeto] = found
+                
+                def post_execute(self):
+                    set_herenode(self.previous_herenode)
+            
+            
             linkstep_regex = str('(?:label|jump|menu|if|s(?:cene|how|ay)|hide|python)\\b')
 
-            class LinkStep:
-                __slots__ = ['typ','content','depth']
-                def __init__(self, l, isglobal):
-                    opts = \
-                        { 'label':lambda l:l.string() or l.label_name()
-                        , 'say':Lexer.string
-                        , 'scene':lambda l:l.string() or parse_image_name_forgiving(l,keywords=['for','as'])
-                        , 'show':lambda l:l.string() or parse_image_name_forgiving(l,keywords=['for','as'])
-                        , 'hide':lambda l:l.string() or parse_image_name_forgiving(l,keywords=['for','as'])
-                        , 'jump':lambda l:l.string() or l.label_name()
-                        , 'menu':Lexer.string
-                        , 'if':Lexer.string
-                        , 'python':Lexer.string
-                        }
-                    
-                    self.typ = l.require(linkstep_regex,"node type specifier")
-                    if self.typ not in opts:
-                        renpy.error("link step typ not yet fully implemented: %r"%typ)
-                    self.content = opts[self.typ](l)
+            def linkstep_specifier(typ,keywords=[]):
+                opts = \
+                    { 'label':lambda l:l.string() or l.label_name()
+                    , 'say':Lexer.string
+                    , 'scene':lambda l:l.string() or parse_image_name_forgiving(l,keywords=keywords)
+                    , 'show':lambda l:l.string() or parse_image_name_forgiving(l,keywords=keywords)
+                    , 'hide':lambda l:l.string() or parse_image_name_forgiving(l,keywords=keywords)
+                    , 'jump':lambda l:l.string() or l.label_name()
+                    , 'menu':Lexer.string
+                    , 'if':Lexer.string
+                    , 'python':Lexer.string
+                    }
+                if typ not in opts:
+                    renpy.error("link find/search typ not yet fully implemented: %r"%typ)
+                return opts[typ]
 
-                    self.depth = None
-                    self.storeto = None
-                    def additional_keywords(l):
-                        if not isglobal:
-                            if l.keyword('for'):
-                                self.depth = int(l.require(l.integer,"maximum depth"))
-                            else:
-                                self.depth = 200
-
-                        if l.keyword('as'):
-                            self.storeto = l.require(l.name,"storeto target")
-
-                    while additional_keywords(l):
-                        pass
-
+            def parse_subblock(l):
+                block = []
+                if l.match(':'):
                     l.expect_eol()
+                    l.expect_block("find statement block")
+                    block = renpy.parser.parse_block(l.subblock_lexer(True))
+                return block
 
-            def parse(isglobal=False):
-                def wrap(l):
-                    return LinkStep(l,isglobal)
-                return wrap
-            
-            def lint(ls):
-                if ls.depth is not None and ls.depth < 1:
-                    renpy.error("'search %s' statement must be allowed to search at least one node ahead!"%ls.typ)
-                if ls.depth is None and not content:
-                    renpy.error("'find %s' statement needs some information to narrow the search!"%ls.typ)
-                
-                if ls.typ=='label' and ls.content and not renpy.game.script.has_label(ls.content):
-                    renpy.error("Could not find label %r!"%ls.content)
-                elif ls.typ=='say' and ls.content and ls.depth is None:
-                    one = False
-                    for node in renpy.game.script.all_stmts:
-                        if isinstance(node, renpy.ast.Say) and node.what == ls.content:
-                            if not one:
-                                one = True
-                            else:
-                                renpy.error("Found at least two say nodes with content %r!"%ls.content)
-                    if not one:
-                        renpy.error("Say node with content %r not found!"%ls.content)
-                else:
-                    renpy.error("Lint unimplemented for find typ %r"%ls.typ)
-            
-            def execute(ls):
-                # sprnt("Exec: 'findsearch %s %r'"%(ls.typ,ls.content))
-                def find_show(imspec):
-                    for node in renpy.game.script.all_stmts:
-                        if isinstance(node, renpy.ast.Show) and ' '.join(node.imspec[0])==ls.content:
-                            return node
-                
-                def find_hide(imspec):
-                    for node in renpy.game.script.all_stmts:
-                        if isinstance(node, renpy.ast.Hide) and ' '.join(node.imspec[0])==ls.content:
-                            return node
+            @renpy.parser.statement('find')
+            def parse_stmt_find(l,loc):
+                typ = l.require(linkstep_regex,"node type specifier")
+                content = linkstep_specifier(typ,keywords=['as'])(l)
+                storeto = None
+                if l.keyword('as'):
+                    storeto = l.require(l.name,"node storage variable name")
 
-                if (ls.depth is None) or (ls.typ == 'label' and ls.content): # Find statement or search statement for label with name
-                    fn =\
-                        {'label':modast.find_label
-                        ,'jump':modast.find_jump_target
-                        ,'menu':modast.find_menu
-                        ,'show':find_show
-                        ,'hide':find_hide
-                        ,'say':modast.find_say
-                        ,'python':modast.find_python_statement
-                        }.get(ls.typ,lambda _:renpy.error("Unrecognized 'find' typ: %r"%(ls.typ)))
+                rv = HereNodeOp(loc,parse_subblock(l),typ,content,storeto=storeto)
+                l.advance()
+                if not l.init:
+                    rv = renpy.ast.Init(loc, [ rv ], l.init_offset)
+                return rv
 
-                    n = fn(ls.content)
-                    if n is None:
-                        renpy.error("Failed to find node from expression 'find %s' with content %r"%(ls.typ,ls.content))
-                else: # Search statement
-                    fromnode = renpy.python.store_dicts["store"].get(hn,None)
-                    n = None
-                    if fromnode is None:
-                        renpy.error("The current node must already be defined to run a 'search' statement. Try running a 'find' in this file first!")
-                    elif not ls.content:
-                        type = \
-                            {'say':renpy.ast.Say
-                            ,'if':renpy.ast.If
-                            ,'menu':renpy.ast.Menu
-                            ,'show':renpy.ast.Show
-                            ,'hide':renpy.ast.Hide
-                            ,'call':renpy.ast.Call
-                            ,'scene':renpy.ast.Scene
-                            ,'label':renpy.ast.Label
-                            }.get(ls.typ,None)
-                        if type is None:
-                            renpy.error("Unrecognized 'search' target: %r"%type)
-                        n = modast.search_for_node_type(fromnode,type,max_depth=ls.depth)
-                        if n is None:
-                            renpy.error("I couldn't find a node of type %r starting from %r"%(type,fromnode))
+            @renpy.parser.statement('search')
+            def parse_stmt_search(l,loc):
+                typ = l.require(linkstep_regex,"node type specifier")
+                content = linkstep_specifier(typ,keywords=['as','for','from'])(l)
+                depth = 200
+                storeto = None
+                fromvar = None
+                while True:
+                    if l.keyword('for'):
+                        depth = int(l.require(l.integer,"maximum depth"))
+                    elif l.keyword('from'):
+                        fromvar = l.require(l.name,"search origin node")
+                    elif l.keyword('as'):
+                        storeto = l.require(l.name,"node storage variable name")
                     else:
-                        criteria = \
-                            {'say':lambda x: isinstance(x,renpy.ast.Say) and x.what==ls.content
-                            ,'if':lambda x: isinstance(x,renpy.ast.If) and any((e[0]==ls.content for e in x.entries))
-                            ,'menu':lambda x: isinstance(x,renpy.ast.Menu) and any((e[0]==ls.content for e in x.items))
-                            ,'show':lambda x: isinstance(x,renpy.ast.Show) and ' '.join(x.imspec[0])==ls.content
-                            ,'hide':lambda x: isinstance(x,renpy.ast.Hide) and ' '.join(x.imspec[0])==ls.content
-                            ,'call':lambda x: isinstance(x,renpy.ast.Call) and x.label==ls.content
-                            ,'scene':lambda x: isinstance(x,renpy.ast.Scene) and x.imspec is not None and ''.join(x.imspec[0])==ls.content
-                            }.get(ls.typ,None)
-                        if criteria is None:
-                            renpy.error("Unrecognized 'search' target: %r" % ls.typ)
-                        n = modast.search_for_node_with_criteria(fromnode,criteria,max_depth=ls.depth)
-                        if n is None:
-                            renpy.error("I couldn't find a node matching type %r with content \n    %r\n starting from %r"%(ls.typ,ls.content,fromnode))
+                        break
 
-                set_herenode(n)
-                if ls.storeto is not None:
-                    renpy.python.store_dicts["store"][ls.storeto] = n
+                rv = HereNodeOp(loc,parse_subblock(l),typ,content,depth=depth,fromvar=fromvar,storeto=storeto)
+                l.advance()
+                if not l.init:
+                    rv = renpy.ast.Init(loc, [ rv ], l.init_offset)
+                return rv
 
-            renpy.statements.register(
-                'find',
-                parse=parse(isglobal=True),
-                lint = lint,
-                execute=execute,
-                init = True
-            )
-            renpy.statements.register(
-                'search',
-                parse=parse(isglobal=False),
-                lint = lint,
-                execute=execute,
-                init = True
-            )
-        linkmod_findsearch()
+            @renpy.parser.statement('branch')
+            def parse_stmt_branch(l,loc):
+                condition = parse_condition(l,allow_blank=True)
+
+                storeto = None
+                while True:
+                    if l.keyword('as'):
+                        storeto = l.require(l.name,"node storage variable name")
+                    elif l.keyword('from'):
+                        renpy.error("'from' keyword not supported for branch statements to prevent sanity issues.")
+                    else:
+                        break
+
+                rv = HereNodeOp(loc,parse_subblock(l),'branch',condition,storeto=storeto)
+                l.advance()
+                if not l.init:
+                    rv = renpy.ast.Init(loc, [ rv ], l.init_offset)
+                return rv
+        linkmod_commands_setting_new_herenode()
 
         def linkmod_next():
             def parse(l):
                 l.expect_eol()
             
-            def lint(_):
-                pass
-            
             def execute(_):
-                current_node = renpy.python.store_dicts["store"].get(hn,None)
-                if current_node is None:
-                    renpy.error("The current node must already be defined to run a 'next' statement. Try running a 'find' in this file first!")
-                else:
-                    renpy.python.store_dicts["store"][hn] = current_node.next
+                set_herenode(get_herenode("run a 'next' statement").next)
 
             renpy.statements.register(
                 'next',
                 parse=parse,
-                lint = lint,
                 execute=execute,
                 init = True
             )
@@ -207,19 +336,20 @@ python early:
             def parse(is_call=False):
                 def wrap(l):
                     name = l.require(l.label_name,"label")
-                    return (is_call,name)
+                    fromvar = None
+                    if l.keyword('from'):
+                        fromvar = l.require(l.name,"from node variable")
+                    return (is_call,fromvar,name)
                 return wrap
-
-            def lint(dat):
-                l = modast.find_label(dat[1])
-                if l is None:
-                    renpy.error("Could not find label named %r."%name)
             
             def execute(dat):
-                is_call,name = dat
-                origin = renpy.python.store_dicts["store"][hn]
-                if origin is None:
-                    renpy.error("The current node must already be defined to link a mod %r statement. Try running a 'find' in this file first!"%('call' if is_call else 'jump'))
+                if not renpy.game.context().init_phase:
+                    renpy.error("jumpcallto may only be executed at init time.\nIf you need more advanced modding features, you may want\nto look at using the `modast` module directly.\nIf you need to run past this statement,\ntry unwrapping your linking operations from the surrounding Init block.")
+
+                is_call,fromvar,name = dat
+                if fromvar is None:
+                    fromvar = hn
+                origin = get_herenode("link a mod statement",fromvar)
                 if is_call:
                     modast.call_hook(origin,modast.find_label(name),None,None)
                 else:
@@ -228,7 +358,6 @@ python early:
             renpy.statements.register(
                 'callto',
                 parse= parse(is_call=True),
-                lint = lint,
                 execute=execute,
                 init = True
             )
@@ -236,87 +365,18 @@ python early:
             renpy.statements.register(
                 'jumpto',
                 parse=parse(is_call=False),
-                lint = lint,
                 execute=execute,
                 init = True
             )
         linkmod_jumpcallto()
 
-        def linkmod_branch():
-            class Branch(renpy.ast.While):
-                __slots__ = ['previous_herenode']
-
-                def __init__(self, loc, condition, block):
-                    super(Branch, self).__init__(loc,condition,block)
-                    self.previous_herenode = None
-
-                def execute(self):
-                    # sprnt("Exec: 'branch %s' at hn %r with prevhn %r"%(self.condition,renpy.python.store_dicts["store"][hn],self.previous_herenode))
-                    renpy.ast.next_node(self.next)
-                    renpy.ast.statement_name('block statement')
-
-                    if self.previous_herenode is not None:
-                        set_herenode(self.previous_herenode)
-                        self.previous_herenode = None
-                    else:
-                        renpy.ast.next_node(self.block[0])
-                        n = renpy.python.store_dicts["store"].get(hn,None)
-                        found = None
-                        self.previous_herenode = n
-                        if n is None:
-                            renpy.error("The current node must already be defined to descend into a branch. Try running a 'find' in this file first!")
-                        elif isinstance(n,renpy.ast.Menu):
-                            if self.condition is None:
-                                renpy.error("I expected a menu item to branch to!")
-                            choice = ml.get_menu_hook(n).get_item(self.condition)
-                            if choice is None:
-                                renpy.error("I couldn't find a menu item labeled %r in the menu %r!"%(self.condition,n))
-                            found = choice[2][0]
-                        elif isinstance(n,renpy.ast.If):
-                            arg = self.condition if self.condition is not None else 'True'
-                            for e in n.entries:
-                                if e[0] == arg:
-                                    found = e[1][0]
-                                    break
-                            if found is None:
-                                renpy.error("I couldn't find the condition %r in the if statement %r!"%(self.condition,n))
-                        else:
-                            renpy.error("I can't branch into a %r!"%type(n))
-                        set_herenode(found)
-            
-            @renpy.parser.statement("branch")
-            def parse(l, loc):
-                condition = l.string()
-                if condition is None:
-                    l.keyword('else') # Allow using else as the target of a branch.
-                elif condition == 'else':
-                    condition = None # The 'else' statement is a branch, not a condition str.
-                l.require(str(':'))
-                l.expect_eol()
-                l.expect_block("branch statement")
-                block = renpy.parser.parse_block(l.subblock_lexer(True))
-                l.advance()
-
-                rv = Branch(loc, condition, block)
-                if not l.init:
-                    rv = renpy.ast.Init(loc, [ rv ], 0)
-
-                return rv
-        linkmod_branch()
-
         def linkmod_add():
             def parse(l):
-                condition = l.require(l.string,"branch")
+                condition = parse_condition(l)
                 l.require(str("branch"),"branch keyword")
                 label = l.require(l.label_name,"label")
                 l.expect_eol()
                 return (condition,label)
-            
-            def lint(dat):
-                condition,label = dat
-                l = modast.find_label(label)
-                if l is None:
-                    renpy.error("Could not find label named %r."%label)
             
             def execute(dat):
                 condition,label = dat
@@ -339,7 +399,6 @@ python early:
             renpy.statements.register(
                 'add',
                 parse=parse,
-                lint = lint,
                 execute=execute,
                 init = True
             )
@@ -347,13 +406,15 @@ python early:
 
         def linkmod_change():
             def parse(l):
-                condition = l.require(l.string,"existing branch")
+                condition = parse_condition(l)
+
                 if l.keyword('to') is None:
                     renpy.error("Expected 'to' keyword to complete 'change' statement.")
-                newcondition = l.require(l.string,"new condition")
+
+                newcondition = parse_condition(l)
                 l.expect_eol()
                 return (condition,newcondition)
-            
+
             def execute(dat):
                 condition,newcondition = dat
                 n = renpy.python.store_dicts["store"][hn]
@@ -362,25 +423,25 @@ python early:
                 elif isinstance(n,renpy.ast.Menu):
                     # TODO: Support changing conditions here. May require separating 'change option' code from 'change cond'
                     h = ml.get_menu_hook(n)
-                    choice = h.get_item(condition)
-                    if choice is None:
-                        self.error("I couldn't find a menu item labeled %r in the menu %r!"%(arg,n))
-                    h.delete_item(condition)
-                    h.add_item(newcondition,choice[1],choice[2])
+                    for i, (label, src, block) in enumerate(self.get_items()):
+                        if label == condition:
+                            if newcondition is 'False':
+                                h.menu.items[i] = (label, 'False', block)
+                            elif newcondition is 'True':
+                                h.menu.items[i] = (label, 'True', block)
+                            else:
+                                h.menu.items[i] = (newcondition, src, block)
+                            return
+                    self.error("I couldn't find a menu item labeled %r in the menu %r!"%(arg,node_print_formatter(n)))
                 elif isinstance(n,renpy.ast.If):
-                    if condition == 'else':
-                        condition = 'True'
-                    if newcondition == 'else':
-                        newcondition = 'True'
-                    for e in n.entries:
+                    for i,e in enumerate(n.entries):
                         if e[0] == condition:
-                            n.entries.remove(e)
-                            n.entries.append((newcondition,e[1]))
+                            n.entries[i] = (newcondition, e[1])
                             return
                     renpy.error("I couldn't find the condition %r in the if statement %s!"%(condition,node_print_formatter(n)))
                 else:
                     renpy.error("I can't 'change' a branch on a %r!"%type(n))
-            
+
             renpy.statements.register(
                 'change',
                 parse=parse,
@@ -389,22 +450,11 @@ python early:
             )
         linkmod_change()
 
-        def linkmod_delete():
-            # TODO: Implement this.
-            pass
-        linkmod_delete()
-
         def linkmod_link():
             def parse(l):
                 label = l.require(l.label_name,"label")
                 l.expect_eol()
                 return label
-            
-            def lint(dat):
-                label = dat
-                l = modast.find_label(label)
-                if l is None:
-                    renpy.error("Could not find label named %r."%label)
             
             def execute(dat):
                 label = dat
@@ -421,7 +471,6 @@ python early:
             renpy.statements.register(
                 'link',
                 parse=parse,
-                lint = lint,
                 execute=execute,
                 init = True
             )
