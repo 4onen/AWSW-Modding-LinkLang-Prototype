@@ -68,7 +68,9 @@ python early:
             # sprnt("Herenode set: %s"%node_print_formatter(n))
             renpy.python.store_dicts["store"][hn] = n
         
-        def get_herenode(action,fromvar=hn):
+        def get_herenode(action,fromvar=None):
+            if fromvar == None:
+                fromvar = hn
             n = renpy.python.store_dicts["store"].get(fromvar, None)
             if n is None or not isinstance(n, renpy.ast.Node):
                 if fromvar==hn:
@@ -337,21 +339,29 @@ python early:
                 def wrap(l):
                     name = l.require(l.label_name,"label")
                     fromvar = None
+                    returnto = None
                     if l.keyword('from'):
                         fromvar = l.require(l.name,"from node variable")
-                    return (is_call,fromvar,name)
+                    if is_call and l.keyword('return'):
+                        returnto = l.require(l.name,"return node variable")
+                    return (is_call,fromvar,returnto,name)
                 return wrap
             
             def execute(dat):
                 if not renpy.game.context().init_phase:
                     renpy.error("jumpcallto may only be executed at init time.\nIf you need more advanced modding features, you may want\nto look at using the `modast` module directly.\nIf you need to run past this statement,\ntry unwrapping your linking operations from the surrounding Init block.")
 
-                is_call,fromvar,name = dat
+                is_call,fromvar,returnto,name = dat
                 if fromvar is None:
                     fromvar = hn
                 origin = get_herenode("link a mod statement",fromvar)
                 if is_call:
-                    modast.call_hook(origin,modast.find_label(name),None,None)
+                    if returnto is not None:
+                        # Grab the return node from a variable unless it's 'here', then grab the origin node.
+                        # Need to do this because if we set a return node, it will return to the beginning of the
+                        #  statement, rather than the end, forming an infinite loop in some cases.
+                        returnto = get_herenode("return from a call",returnto if returnto != 'here' else None)
+                    modast.call_hook(origin,modast.find_label(name),None,returnto)
                 else:
                     modast.hook_opcode(origin,None).chain(modast.find_label(name))
 
