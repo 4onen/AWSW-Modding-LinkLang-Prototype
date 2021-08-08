@@ -496,7 +496,7 @@ python early hide:
                     error("The current node must already be defined to 'change' a branch on it. Try running a 'find' in this file first!")
                 elif isinstance(n,ast.Menu):
                     # TODO: Support changing conditions here. May require separating 'change option' code from 'change cond'
-                    for i, (label, src, block) in enumerate(h.get_items()):
+                    for i, (label, src, block) in enumerate(n.items):
                         if label == condition:
                             if newcondition is 'False':
                                 n.items[i] = (label, 'False', block)
