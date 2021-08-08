@@ -5,8 +5,7 @@ python early hide:
         from renpy.parser import Lexer
         from renpy.exports import error
 
-        import modloader.modast as modast
-        from modloader.modgame import base as ml
+        # from modloader import modast
 
         class CanHaveInitBlock(ast.Node): # Based on ast.While
             __slots__ = ['block', 'executing_body']
@@ -160,7 +159,7 @@ python early hide:
                 if isinstance(n,ast.Menu):
                     if not content:
                         error("I expected a menu item to branch to!")
-                    choice = ml.get_menu_hook(n).get_item(content)
+                    choice = next((i for i in n.items if i[0]==content),None)
                     if choice is None:
                         error("I couldn't find a menu item labeled %r in the menu %r!"%(content,n))
                     return choice[2][0]
@@ -467,8 +466,7 @@ python early hide:
                     condition = dat[2]
                     if not isinstance(n,ast.Menu):
                         error("I can't add a menu choice to a %r"%type(n))
-                    h = ml.get_menu_hook(n)
-                    h.add_item(content,branch_block,condition=condition)
+                    h = n.items.append((content,condition,[branch_block]))
                 else:
                     error("Invalid 'add' statement at init-time. Please contact the developer of the LinkMod modtool with your test case.")
             
@@ -498,15 +496,14 @@ python early hide:
                     error("The current node must already be defined to 'change' a branch on it. Try running a 'find' in this file first!")
                 elif isinstance(n,ast.Menu):
                     # TODO: Support changing conditions here. May require separating 'change option' code from 'change cond'
-                    h = ml.get_menu_hook(n)
                     for i, (label, src, block) in enumerate(h.get_items()):
                         if label == condition:
                             if newcondition is 'False':
-                                h.menu.items[i] = (label, 'False', block)
+                                n.items[i] = (label, 'False', block)
                             elif newcondition is 'True':
-                                h.menu.items[i] = (label, 'True', block)
+                                n.items[i] = (label, 'True', block)
                             else:
-                                h.menu.items[i] = (newcondition, src, block)
+                                n.items[i] = (newcondition, src, block)
                             return
                     error("I couldn't find a menu item labeled %r in the menu %r!"%(condition,node_print_formatter(n)))
                 elif isinstance(n,ast.If):
