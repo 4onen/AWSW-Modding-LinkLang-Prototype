@@ -10,7 +10,7 @@ init:
         jumpto link_example_adine1_alt_greeting
     branch else:
         search menu
-        add "Sure is." branch link_example_adine1_alt_greeting
+        add choice "Sure is." to link_example_adine1_alt_greeting
         branch "I thought we were over this, but at least you don't reduce me to my species anymore.":
             search show
             callto link_example_adine1_notserious

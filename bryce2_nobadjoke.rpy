@@ -2,7 +2,7 @@ find label bryce2
 search scene pad
 search if "nodrinks == False"
 change "nodrinks == False" to "nodrinks == False and brycestatus != \"good\""
-add else branch link_example_bryce2_jokechoice
+add case else to link_example_bryce2_jokechoice
 search say "Don't mind the chaos, this is just a temporary arrangement."
 link link_example_bryce2_dontmindarrangement
 
@@ -25,7 +25,7 @@ label link_example_bryce2_dontmindarrangement:
 
 search say "So, what do you usually do for fun in your world?"
 search menu
-add "Not drink." branch link_example_bryce2_antidrink if nodrinks == True
+add choice "Not drink." to link_example_bryce2_antidrink if nodrinks == True
 label link_example_bryce2_antidrink:
     python:
         renpy.pause(0.5)

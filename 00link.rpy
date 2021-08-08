@@ -3,6 +3,7 @@ python early hide:
         import renpy
         import renpy.ast as ast
         from renpy.parser import Lexer
+        from renpy.exports import error
 
         import modloader.modast as modast
         from modloader.modgame import base as ml
@@ -75,9 +76,9 @@ python early hide:
             n = renpy.python.store_dicts["store"].get(fromvar, None)
             if n is None or not isinstance(n, ast.Node):
                 if fromvar==hn:
-                    renpy.error("The current node must already be defined to %s. Try running a 'find' in this file first!"%action)
+                    error("The current node must already be defined to %s. Try running a 'find' in this file first!"%action)
                 else:
-                    renpy.error("I couldn't find a `ast.Node` in the variable %r!"%fromvar)
+                    error("I couldn't find a `ast.Node` in the variable %r!"%fromvar)
             return n
         
         def parse_condition(l,allow_blank=False):
@@ -152,30 +153,30 @@ python early hide:
                     ,'hide':find_hide
                     ,'say':modast.find_say
                     ,'python':modast.find_python_statement
-                    }.get(typ,lambda _:renpy.error("Unrecognized 'find' typ: %r"%(typ)))
+                    }.get(typ,lambda _:error("Unrecognized 'find' typ: %r"%(typ)))
                 return fn(content)
             
             def branch(n,content):
                 if isinstance(n,ast.Menu):
                     if not content:
-                        renpy.error("I expected a menu item to branch to!")
+                        error("I expected a menu item to branch to!")
                     choice = ml.get_menu_hook(n).get_item(content)
                     if choice is None:
-                        renpy.error("I couldn't find a menu item labeled %r in the menu %r!"%(content,n))
+                        error("I couldn't find a menu item labeled %r in the menu %r!"%(content,n))
                     return choice[2][0]
                 elif isinstance(n,ast.If):
                     if not content:
                         if len(n.entries)!=1:
-                            renpy.error("The `ast.If` I found here has more than one branch! Specify a condition to select a path.")
+                            error("The `ast.If` I found here has more than one branch! Specify a condition to select a path.")
                         else:
                             return n.entries[0][1][0]
                     else:
                         for e in n.entries:
                             if e[0] == content:
                                 return e[1][0]
-                        renpy.error("I couldn't find the condition %r in the if statement %r!"%(content,n))
+                        error("I couldn't find the condition %r in the if statement %r!"%(content,n))
                 else:
-                    renpy.error("I can't branch into a %r!"%type(n))
+                    error("I can't branch into a %r!"%type(n))
 
             def search(typ,n,content,depth):
                 if not content:
@@ -191,7 +192,7 @@ python early hide:
                         ,'python':ast.Python
                         }.get(typ,None)
                     if type is None:
-                        renpy.error("Unrecognized 'search' target: %r"%type)
+                        error("Unrecognized 'search' target: %r"%type)
                     found = modast.search_for_node_type(n,type,max_depth=depth)
                 else:
                     criteria = \
@@ -205,11 +206,11 @@ python early hide:
                         ,'python':lambda x: isinstance(x,ast.Python) and x.code.source==content
                         }.get(typ,None)
                     if criteria is None:
-                        renpy.error("Unrecognized 'search' target: %r" % typ)
+                        error("Unrecognized 'search' target: %r" % typ)
                     found = modast.search_for_node_with_criteria(n,criteria,max_depth=depth)
                 
                 if found is None:
-                    renpy.error("Failed to locate a node from 'search %s' with content\n%r\nstarting from node %s\nand searching for %u nodes.\nPerhaps another mod interfered with the structure of this scene?"%(typ,content,node_print_formatter(n),depth))
+                    error("Failed to locate a node from 'search %s' with content\n%r\nstarting from node %s\nand searching for %u nodes.\nPerhaps another mod interfered with the structure of this scene?"%(typ,content,node_print_formatter(n),depth))
                 return found
 
             class HereNodeOp(CanHaveInitBlock):
@@ -237,13 +238,13 @@ python early hide:
                         found = find(self.typ,self.content)
                     else: # 'search' or 'branch' statements
                         if n is None:
-                            renpy.error("The current node must already be defined to\nrun a 'search' or 'branch' statement. Try running a 'find' in this file first!")
+                            error("The current node must already be defined to\nrun a 'search' or 'branch' statement. Try running a 'find' in this file first!")
                         elif self.typ == 'branch':
                             found = branch(n,self.content)
                         else:
                             found = search(self.typ,n,self.content,self.depth)
                     if found is None:
-                        renpy.error("Failed to '%s' with content %r"%(statement_text,self.content))
+                        error("Failed to '%s' with content %r"%(statement_text,self.content))
                     else:
                         set_herenode(found)
                         if self.storeto is not None:
@@ -268,7 +269,7 @@ python early hide:
                     , 'python':Lexer.string
                     }
                 if typ not in opts:
-                    renpy.error("link find/search typ not yet fully implemented: %r"%typ)
+                    error("link find/search typ not yet fully implemented: %r"%typ)
                 return opts[typ]
 
             def parse_subblock(l):
@@ -364,12 +365,13 @@ python early hide:
                         returnto = l.require(l.name,"return node variable")
                     if l.keyword('if'):
                         condition = parse_python_to_eol(l)
+                    l.expect_eol()
                     return (is_call,fromvar,returnto,name,condition)
                 return wrap
             
             def execute(dat):
                 if not renpy.game.context().init_phase:
-                    renpy.error("jumpcallto may only be executed at init time.\nIf you need more advanced modding features, you may want\nto look at using the `modast` module directly.\nIf you need to run past this statement,\ntry unwrapping your linking operations from the surrounding Init block.")
+                    error("jumpcallto may only be executed at init time.\nIf you need more advanced modding features, you may want\nto look at using the `modast` module directly.\nIf you need to run past this statement,\ntry unwrapping your linking operations from the surrounding Init block.")
 
                 is_call,fromvar,returnto,name,condition = dat
                 if fromvar is None:
@@ -426,32 +428,49 @@ python early hide:
 
         def linkmod_add():
             def parse(l):
-                content = parse_condition(l)
-                l.require(str("branch"),"branch keyword")
-                label = l.require(l.label_name,"label")
-                condition = "True"
-                if l.keyword('if'):
-                    condition = parse_python_to_eol(l)
-                l.expect_eol()
-                return (content,label,condition)
+                if l.keyword('opt') or l.keyword('option') or l.keyword('choice'):
+                    choice = l.require(l.string,"choice")
+                    l.require(str('to'),"to keyword")
+                    label = l.require(l.label_name,"label")
+                    condition = "True"
+                    if l.keyword('if'):
+                        condition = parse_python_to_eol(l)
+                        if not condition or (condition[0]=='"' and condition[-1]=='"'):
+                            l.error("Expected raw python code following 'if' keyword in 'add option'.")
+                    l.expect_eol()
+                    return (choice,label,condition)
+                elif l.keyword('cond') or l.keyword('condition') or l.keyword('case'):
+                    condition = parse_condition(l)
+                    l.require(str('to'),"to keyword")
+                    label = l.require(l.label_name,"label")
+
+                    l.expect_eol()
+                    return (condition,label)
+                else:
+                    l.error("The 'add' statement must be followed by a specifier between menus and if-statements, as in the examples:\n    add option \"Yeah, sounds good.\" to my_mod_label if can_say_menu_option == True\n    add case \"can_do_thing == True\" to my_other_mod_label\nYour problem happened at:")
             
             def execute(dat):
-                content,label,condition = dat
-                branch_block = modast.find_label(label)
                 n = renpy.python.store_dicts["store"][hn]
                 if n is None:
-                    renpy.error("The current node must already be defined 'add' a branch to it. Try running a 'find' in this file first!")
-                elif isinstance(n,ast.Menu):
-                    # TODO: Support adding contents here. May require separating 'add option' code from 'add cond'
-                    h = ml.get_menu_hook(n)
-                    h.add_item(content,branch_block,condition=condition)
-                elif isinstance(n,ast.If):
-                    if n.entries[-1][0] == 'True' and content == 'True':
+                    error("The current node must already be defined 'add' a branch to it. Try running a 'find' in this file first!")
+                branch_block = modast.find_label(dat[1])
+                if len(dat) == 2: # add conditional
+                    condition = dat[0]
+                    if not isinstance(n,ast.If):
+                        error("I can't add a if/else condition branch to a %r"%type(n))
+                    elif n.entries[-1][0] == 'True' and content == 'True': # Replace existing else condition
                         n.entries[-1] = ('True',branch_block)
                     else:
-                        n.entries.append((content,[branch_block]))
+                        n.entries.append((condition,[branch_block]))
+                elif len(dat) == 3: # add choice
+                    content = dat[0]
+                    condition = dat[2]
+                    if not isinstance(n,ast.Menu):
+                        error("I can't add a menu choice to a %r"%type(n))
+                    h = ml.get_menu_hook(n)
+                    h.add_item(content,branch_block,condition=condition)
                 else:
-                    renpy.error("I can't add a branch to a %r!"%type(n))
+                    error("Invalid 'add' statement at init-time. Please contact the developer of the LinkMod modtool with your test case.")
             
             renpy.statements.register(
                 'add',
@@ -466,7 +485,7 @@ python early hide:
                 condition = parse_condition(l)
 
                 if l.keyword('to') is None:
-                    renpy.error("Expected 'to' keyword to complete 'change' statement.")
+                    l.error("Expected 'to' keyword to complete 'change' statement.")
 
                 newcondition = parse_condition(l)
                 l.expect_eol()
@@ -476,7 +495,7 @@ python early hide:
                 condition,newcondition = dat
                 n = renpy.python.store_dicts["store"][hn]
                 if n is None:
-                    renpy.error("The current node must already be defined to 'change' a branch on it. Try running a 'find' in this file first!")
+                    error("The current node must already be defined to 'change' a branch on it. Try running a 'find' in this file first!")
                 elif isinstance(n,ast.Menu):
                     # TODO: Support changing conditions here. May require separating 'change option' code from 'change cond'
                     h = ml.get_menu_hook(n)
@@ -489,15 +508,15 @@ python early hide:
                             else:
                                 h.menu.items[i] = (newcondition, src, block)
                             return
-                    renpy.error("I couldn't find a menu item labeled %r in the menu %r!"%(condition,node_print_formatter(n)))
+                    error("I couldn't find a menu item labeled %r in the menu %r!"%(condition,node_print_formatter(n)))
                 elif isinstance(n,ast.If):
                     for i,e in enumerate(n.entries):
                         if e[0] == condition:
                             n.entries[i] = (newcondition, e[1])
                             return
-                    renpy.error("I couldn't find the condition %r in the if statement %s!"%(condition,node_print_formatter(n)))
+                    error("I couldn't find the condition %r in the if statement %s!"%(condition,node_print_formatter(n)))
                 else:
-                    renpy.error("I can't 'change' a branch on a %r!"%type(n))
+                    error("I can't 'change' a branch on a %r!"%type(n))
 
             renpy.statements.register(
                 'change',
@@ -517,11 +536,11 @@ python early hide:
                 label = dat
                 l = modast.find_label(label)
                 if l is None:
-                    renpy.error("Could not find label named %r."%label)
+                    error("Could not find label named %r."%label)
                 
                 n = renpy.python.store_dicts["store"][hn]
                 if n is None:
-                    renpy.error("The current node must already be defined to 'link' to it. Try running a 'find' in this file first!")
+                    error("The current node must already be defined to 'link' to it. Try running a 'find' in this file first!")
                 else:
                     l.chain(n)
 
