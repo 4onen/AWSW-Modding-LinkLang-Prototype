@@ -56,12 +56,12 @@ change "persistent.annagoodending == True" to "persistent.annagoodending == True
 
 # You're not a good enough person, [player_name].
 find label chapter5
-callto impermanence_end_fix
+callto impermanence_end_fix if any((remydead, annadead, loremdead, brycedead, adinedead))
 search if "persistent.trueending"
 change "persistent.trueending" to inaccessible
 search scene o4
-callto impermanence_end_fix
+callto impermanence_end_fix if any((remydead, annadead, loremdead, brycedead, adinedead))
 
 label impermanence_end_fix:
-    $ trueselectable = trueselectable and not any((remydead, annadead, loremdead, loremdead, brycedead, adinedead))
+    $ trueselectable = False
     return
