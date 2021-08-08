@@ -1,4 +1,4 @@
-python early:
+python early hide:
     def linkmod_main():
         import renpy
         import renpy.ast as ast
@@ -6,7 +6,6 @@ python early:
 
         import modloader.modast as modast
         from modloader.modgame import base as ml
-        from modloader.modgame import sprnt
 
         class CanHaveInitBlock(ast.Node): # Based on ast.While
             __slots__ = ['block', 'executing_body']
@@ -68,7 +67,6 @@ python early:
             return "\n%r\nat line %u of file '%s'"%(n, n.linenumber, n.filename)
         
         def set_herenode(n):
-            # sprnt("Herenode set: %s"%node_print_formatter(n))
             renpy.python.store_dicts["store"][hn] = n
         
         def get_herenode(action,fromvar=None):
@@ -94,8 +92,8 @@ python early:
             if w is not None:
                 if w not in keywords:
                     if w in ['true', 'false']:
-                        renpy.error("%r is not a valid condition keyword. Did you mean to capitalize it?"%w)
-                    renpy.error("%r is not a valid condition keyword."%w)
+                        l.error("%r is not a valid condition keyword. Did you mean to capitalize it?"%w)
+                    l.error("%r is not a valid condition keyword."%w)
                 else:
                     return keywords[w]
             elif allow_blank:
@@ -117,6 +115,22 @@ python early:
                     segments.append(v)
                     continue
             return ' '.join(segments)
+        
+        def parse_python_to_eol(l):
+            l.skip_whitespace()
+            start = l.pos
+            while not l.eol():
+                c = l.text[l.pos]
+                if c in "'\"":
+                    l.python_string()
+                    continue
+                elif l.parenthesised_python():
+                    continue
+                l.pos += 1
+            if l.pos == start or all([c in ' \n' for c in l.text[start:l.pos]]):
+                l.error("Expecting python expression here.")
+            else:
+                return renpy.ast.PyExpr(l.text[start:l.pos], l.filename, l.number)
 
         def linkmod_commands_setting_new_herenode():
             def find_show(imspec):
@@ -261,7 +275,7 @@ python early:
                 block = []
                 if l.match(':'):
                     l.expect_eol()
-                    l.expect_block("find statement block")
+                    l.expect_block("statement block")
                     block = renpy.parser.parse_block(l.subblock_lexer(True))
                 return block
 
@@ -311,7 +325,7 @@ python early:
                     if l.keyword('as'):
                         storeto = l.require(l.name,"node storage variable name")
                     elif l.keyword('from'):
-                        renpy.error("'from' keyword not supported for branch statements to prevent sanity issues.")
+                        l.error("'from' keyword not supported for branch statements to prevent sanity issues.")
                     else:
                         break
 
@@ -343,30 +357,57 @@ python early:
                     name = l.require(l.label_name,"label")
                     fromvar = None
                     returnto = None
+                    condition = None
                     if l.keyword('from'):
                         fromvar = l.require(l.name,"from node variable")
                     if is_call and l.keyword('return'):
                         returnto = l.require(l.name,"return node variable")
-                    return (is_call,fromvar,returnto,name)
+                    if l.keyword('if'):
+                        condition = parse_python_to_eol(l)
+                    return (is_call,fromvar,returnto,name,condition)
                 return wrap
             
             def execute(dat):
                 if not renpy.game.context().init_phase:
                     renpy.error("jumpcallto may only be executed at init time.\nIf you need more advanced modding features, you may want\nto look at using the `modast` module directly.\nIf you need to run past this statement,\ntry unwrapping your linking operations from the surrounding Init block.")
 
-                is_call,fromvar,returnto,name = dat
+                is_call,fromvar,returnto,name,condition = dat
                 if fromvar is None:
                     fromvar = hn
                 origin = get_herenode("link a mod statement",fromvar)
-                if is_call:
-                    if returnto is not None:
-                        # Grab the return node from a variable unless it's 'here', then grab the origin node.
-                        # Need to do this because if we set a return node, it will return to the beginning of the
-                        #  statement, rather than the end, forming an infinite loop in some cases.
-                        returnto = get_herenode("return from a call",returnto if returnto != 'here' else None)
-                    modast.call_hook(origin,modast.find_label(name),None,returnto)
+                if condition is None:
+                    if is_call:
+                        if returnto is not None:
+                            # Grab the return node from a variable unless it's 'here', then grab the origin node.
+                            # Need to do this because if we set a return node, it will return to the beginning of the
+                            #  statement, rather than the end, forming an infinite loop in some cases.
+                            returnto = get_herenode("return from a call",returnto if returnto != 'here' else None)
+                        modast.call_hook(origin,modast.find_label(name),None,returnto)
+                    else:
+                        modast.hook_opcode(origin,None).chain(modast.find_label(name))
                 else:
-                    modast.hook_opcode(origin,None).chain(modast.find_label(name))
+                    if is_call:
+                        if returnto is not None:
+                            returnto = get_herenode("return from a call",returnto if returnto != 'here' else None)
+                        def call_func(hook):
+                            ast.next_node(hook.old_next)
+
+                            if renpy.python.py_eval(condition):
+                                label = renpy.game.context().call(name,return_site=returnto.old_next.name if returnto is not None else hook.old_next.name)
+                                hook.chain(label)
+                                ast.next_node(label)
+                            return True
+                        modast.hook_opcode(origin,call_func)
+                    else:
+                        def jump_func(hook):
+                            ast.next_node(hook.old_next)
+                            if renpy.python.py_eval(condition):
+                                ast.next_node(name)
+                            return True
+                        modast.hook_opcode(origin,jump_func)
+
+
+
 
             renpy.statements.register(
                 'callto',
@@ -385,27 +426,30 @@ python early:
 
         def linkmod_add():
             def parse(l):
-                condition = parse_condition(l)
+                content = parse_condition(l)
                 l.require(str("branch"),"branch keyword")
                 label = l.require(l.label_name,"label")
+                condition = "True"
+                if l.keyword('if'):
+                    condition = parse_python_to_eol(l)
                 l.expect_eol()
-                return (condition,label)
+                return (content,label,condition)
             
             def execute(dat):
-                condition,label = dat
+                content,label,condition = dat
                 branch_block = modast.find_label(label)
                 n = renpy.python.store_dicts["store"][hn]
                 if n is None:
                     renpy.error("The current node must already be defined 'add' a branch to it. Try running a 'find' in this file first!")
                 elif isinstance(n,ast.Menu):
-                    # TODO: Support adding conditions here. May require separating 'add option' code from 'add cond'
+                    # TODO: Support adding contents here. May require separating 'add option' code from 'add cond'
                     h = ml.get_menu_hook(n)
-                    h.add_item(condition,branch_block,condition="True")
+                    h.add_item(content,branch_block,condition=condition)
                 elif isinstance(n,ast.If):
-                    if n.entries[-1][0] == 'True' and condition == 'True':
+                    if n.entries[-1][0] == 'True' and content == 'True':
                         n.entries[-1] = ('True',branch_block)
                     else:
-                        n.entries.append((condition,branch_block))
+                        n.entries.append((content,[branch_block]))
                 else:
                     renpy.error("I can't add a branch to a %r!"%type(n))
             
@@ -488,3 +532,4 @@ python early:
                 init = True
             )
         linkmod_link()
+    linkmod_main()
