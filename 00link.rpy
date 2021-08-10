@@ -411,14 +411,14 @@ python early hide:
 
 
             renpy.statements.register(
-                'callto',
+                'callto label',
                 parse= parse(is_call=True),
                 execute=execute,
                 init = True
             )
 
             renpy.statements.register(
-                'jumpto',
+                'jumpto label',
                 parse=parse(is_call=False),
                 execute=execute,
                 init = True

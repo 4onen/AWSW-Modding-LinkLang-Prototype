@@ -2,20 +2,20 @@ init:
     # Adine1 adjustments
     find label adine1
     search say "(Well, that was quick.)" # Test comment
-    callto link_example_adine1_expected_longer
+    callto label link_example_adine1_expected_longer
 
     search if
     branch "chapter3unplayed == False":
         search say "I thought they sent you away after everything that's going on."
-        jumpto link_example_adine1_alt_greeting
+        jumpto label link_example_adine1_alt_greeting
     branch else:
         search menu
         add choice "Sure is." to link_example_adine1_alt_greeting
         branch "I thought we were over this, but at least you don't reduce me to my species anymore.":
             search show
-            callto link_example_adine1_notserious
+            callto label link_example_adine1_notserious
             search show
-            jumpto link_example_adine1_alt_greeting
+            jumpto label link_example_adine1_alt_greeting
 
     # Hook a link for rude players to end up back with more choice.
     search menu
@@ -33,7 +33,7 @@ init:
     search say "Feel right at home. I better eat this before it gets cold." as eatbeforecold
     search say "I sat down at the table and started eating my food while Adine decided to take a seat opposite of myself."
     next
-    callto link_example_adine1_alt_sitting from eatbeforecold return here
+    callto label link_example_adine1_alt_sitting from eatbeforecold return here
 
 label link_example_adine1_expected_longer:
     c "(I expected it to take longer to get here.)"

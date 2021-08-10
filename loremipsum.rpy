@@ -3,10 +3,10 @@ init:
     search if
     branch else:
         search say "You don't mind if I take a seat, right?"
-        callto link_example_loremipsum_knoweachother
+        callto label link_example_loremipsum_knoweachother
 
     search say "I'm sorry, [player_name]. This is my roommate and long-time best friend, Ipsum."
-    callto link_example_loremipsum_dontknoweachother
+    callto label link_example_loremipsum_dontknoweachother
 
 label link_example_loremipsum_knoweachother:
     c "Wait, Lorem, Ipsum, you know each other?"
