@@ -459,10 +459,10 @@ python early hide:
                     condition = dat[0]
                     if not isinstance(n,ast.If):
                         error("I can't add a if/else condition branch to a %r"%type(n))
-                    elif n.entries[-1][0] == 'True' and content == 'True': # Replace existing else condition
+                    elif n.entries[-1][0] == 'True' and condition == 'True': # Replace existing else condition
                         n.entries[-1] = ('True',branch_block)
                     else:
-                        n.entries.append((condition,[branch_block]))
+                        n.entries.insert(0,(condition,[branch_block]))
                 elif len(dat) == 3: # add choice
                     content = dat[0]
                     condition = dat[2]
