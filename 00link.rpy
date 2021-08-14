@@ -5,8 +5,6 @@ python early hide:
         from renpy.parser import Lexer
         from renpy.exports import error
 
-        # from modloader import modast
-
         class CanHaveInitBlock(ast.Node): # Based on ast.While
             __slots__ = ['block', 'executing_body']
             def __init__(self, loc, block):
@@ -144,6 +142,7 @@ python early hide:
                         return node
             
             def find(typ,content):
+                import modloader.modast
                 fn =\
                     {'label':modast.find_label
                     ,'jump':modast.find_jump_target
@@ -178,6 +177,7 @@ python early hide:
                     error("I can't branch into a %r!"%type(n))
 
             def search(typ,n,content,depth):
+                from modloader.modast import search_for_node_with_criteria, search_for_node_type
                 if not content:
                     type = \
                         {'say':ast.Say
@@ -192,7 +192,7 @@ python early hide:
                         }.get(typ,None)
                     if type is None:
                         error("Unrecognized 'search' target: %r"%type)
-                    found = modast.search_for_node_type(n,type,max_depth=depth)
+                    found = search_for_node_type(n,type,max_depth=depth)
                 else:
                     criteria = \
                         {'say':lambda x: isinstance(x,ast.Say) and x.what==content
@@ -206,7 +206,7 @@ python early hide:
                         }.get(typ,None)
                     if criteria is None:
                         error("Unrecognized 'search' target: %r" % typ)
-                    found = modast.search_for_node_with_criteria(n,criteria,max_depth=depth)
+                    found = search_for_node_with_criteria(n,criteria,max_depth=depth)
                 
                 if found is None:
                     error("Failed to locate a node from 'search %s' with content\n%r\nstarting from node %s\nand searching for %u nodes.\nPerhaps another mod interfered with the structure of this scene?"%(typ,content,node_print_formatter(n),depth))
@@ -369,6 +369,7 @@ python early hide:
                 return wrap
             
             def execute(dat):
+                from modloader.modast import call_hook, hook_opcode, find_label
                 if not renpy.game.context().init_phase:
                     error("jumpcallto may only be executed at init time.\nIf you need more advanced modding features, you may want\nto look at using the `modast` module directly.\nIf you need to run past this statement,\ntry unwrapping your linking operations from the surrounding Init block.")
 
@@ -383,9 +384,9 @@ python early hide:
                             # Need to do this because if we set a return node, it will return to the beginning of the
                             #  statement, rather than the end, forming an infinite loop in some cases.
                             returnto = get_herenode("return from a call",returnto if returnto != 'here' else None)
-                        modast.call_hook(origin,modast.find_label(name),None,returnto)
+                        call_hook(origin,find_label(name),None,returnto)
                     else:
-                        modast.hook_opcode(origin,None).chain(modast.find_label(name))
+                        hook_opcode(origin,None).chain(find_label(name))
                 else:
                     if is_call:
                         if returnto is not None:
@@ -398,14 +399,14 @@ python early hide:
                                 hook.chain(label)
                                 ast.next_node(label)
                             return True
-                        modast.hook_opcode(origin,call_func)
+                        hook_opcode(origin,call_func)
                     else:
                         def jump_func(hook):
                             ast.next_node(hook.old_next)
                             if renpy.python.py_eval(condition):
                                 ast.next_node(name)
                             return True
-                        modast.hook_opcode(origin,jump_func)
+                        hook_opcode(origin,jump_func)
 
 
 
@@ -449,10 +450,11 @@ python early hide:
                     l.error("The 'add' statement must be followed by a specifier between menus and if-statements, as in the examples:\n    add option \"Yeah, sounds good.\" to my_mod_label if can_say_menu_option == True\n    add case \"can_do_thing == True\" to my_other_mod_label\nYour problem happened at:")
             
             def execute(dat):
+                from modloader.modast import find_label
                 n = renpy.python.store_dicts["store"][hn]
                 if n is None:
                     error("The current node must already be defined 'add' a branch to it. Try running a 'find' in this file first!")
-                branch_block = modast.find_label(dat[1])
+                branch_block = find_label(dat[1])
                 if len(dat) == 2: # add conditional
                     condition = dat[0]
                     if not isinstance(n,ast.If):
@@ -530,8 +532,8 @@ python early hide:
                 return label
             
             def execute(dat):
-                label = dat
-                l = modast.find_label(label)
+                from modloader.modast import find_label
+                l = find_label(dat)
                 if l is None:
                     error("Could not find label named %r."%label)
                 
