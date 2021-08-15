@@ -4,7 +4,7 @@ from modloader.modclass import Mod, loadable_mod
 class AWSWMod(Mod):
     @staticmethod
     def mod_info():
-        return ("Linkfile Example Mod", "v0.0", "4onen", False)
+        return ("Linkfile Example Mod", "v1.0", "4onen", False)
 
     @staticmethod
     def mod_load():
