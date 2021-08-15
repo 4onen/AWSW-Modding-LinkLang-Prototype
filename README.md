@@ -1,5 +1,7 @@
 # AWSW Modding LinkLang
 
+Workshop SteamID: 2576152827
+
 *LinkLang* is a crazy idea I had last night for making it easier to link *Angels with Scaly Wings* mods into the base game. At the moment, the process is really unapproachable because people are just told to "figure it out from code examples."
 
 Well, I'm not changing that, but I'm making the code much easier to understand! Here's the simplest possible mod with *LinkLang*:
