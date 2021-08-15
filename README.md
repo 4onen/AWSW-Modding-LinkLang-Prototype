@@ -18,7 +18,6 @@ label short_example_mod_target:
 *\_\_init\_\_.py*
 ```py
 from modloader.modclass import Mod, loadable_mod
-from link import run_linkfile
 
 @loadable_mod
 class AWSWMod(Mod):
