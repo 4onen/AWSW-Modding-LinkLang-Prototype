@@ -142,7 +142,7 @@ python early hide:
                         return node
             
             def find(typ,content):
-                import modloader.modast
+                from modloader import modast
                 fn =\
                     {'label':modast.find_label
                     ,'jump':modast.find_jump_target
