@@ -1,0 +1,5 @@
+Linkmod itself adds no content to AwSW. It is a tool to make writing mods significantly easier, by moving the connection of mod scenes from the mods' [code]__init__.py[/code] file to the mods' [code].rpy[/code] scene files.
+
+This download is the user copy of Linkmod, including no examples and no README. It is provided to allow other mods released on the Steam Workshop to automatically include Linkmod as a requirement.
+
+To find example files and a README for how to make linkmod-based mods, see the [url=https://github.com/4onen/AWSW-Modding-LinkLang-Prototype]GitHub Repository[/url]. For support in making your own mods, join the [url=https://discord.gg/Hg5jqT6]AwSW Unofficial Fan Discord[/url].
