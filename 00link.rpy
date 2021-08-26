@@ -404,7 +404,7 @@ python early hide:
                         def jump_func(hook):
                             ast.next_node(hook.old_next)
                             if renpy.python.py_eval(condition):
-                                ast.next_node(name)
+                                ast.next_node(modast.find_label(name))
                             return True
                         hook_opcode(origin,jump_func)
 
