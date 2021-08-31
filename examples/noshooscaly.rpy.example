@@ -1,0 +1,4 @@
+init 1:
+    find label _call_skiptut_3
+    search menu "Now shoo, scaly-face." for 1001
+    change "Now shoo, scaly-face." to inaccessible

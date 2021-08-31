@@ -500,9 +500,9 @@ python early hide:
                     # TODO: Support changing conditions here. May require separating 'change option' code from 'change cond'
                     for i, (label, src, block) in enumerate(n.items):
                         if label == condition:
-                            if newcondition is 'False':
+                            if newcondition == 'False':
                                 n.items[i] = (label, 'False', block)
-                            elif newcondition is 'True':
+                            elif newcondition == 'True':
                                 n.items[i] = (label, 'True', block)
                             else:
                                 n.items[i] = (newcondition, src, block)
