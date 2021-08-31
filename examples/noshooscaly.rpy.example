@@ -1,4 +1,5 @@
 init 1:
     find label _call_skiptut_3
     search menu "Now shoo, scaly-face." for 1001
-    change "Now shoo, scaly-face." to inaccessible
+    change option "Now shoo, scaly-face." text to "Shoo! Shoo, scaly-face!"
+    change option "Shoo! Shoo, scaly-face!" target to label skipintro

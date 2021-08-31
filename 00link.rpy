@@ -482,22 +482,64 @@ python early hide:
 
         def linkmod_change():
             def parse(l):
-                condition = parse_condition(l)
+                if l.keyword('opt') or l.keyword('option') or l.keyword('choice'):
+                    choicetext = l.require(l.string,"choice")
 
-                if l.keyword('to') is None:
-                    l.error("Expected 'to' keyword to complete 'change' statement.")
+                    if l.keyword('cond') or l.keyword('condition') or l.keyword('case'):
+                        if l.keyword('to') is None:
+                            l.error("Expected 'to' keyword to continue 'change option' statement.")
+                        newcondition = parse_condition(l)
+                        return (choicetext,newcondition,"condition")
+                    elif l.keyword('text'):
+                        if l.keyword('to') is None:
+                            l.error("Expected 'to' keyword to continue 'change option' statement.")
+                        newtext = l.require(l.string,"text")
+                        return (choicetext,newtext,"text")
+                    elif l.keyword('target') or l.keyword('block'):
+                        if l.keyword('to') is None:
+                            l.error("Expected 'to' keyword to continue 'change option' statement.")
+                        l.require(str('label'),"label keyword") # To allow expansion to other block or link types
+                        newtarget = l.require(l.label_name,"label")
+                        return (choicetext,newtarget,"label")
+                    else:
+                        l.error("Expected 'text', 'target' or 'condition' keyword to continue 'change option' statement.")
+                else:
+                    is_If = l.keyword('cond') or l.keyword('condition') or l.keyword('case')
 
-                newcondition = parse_condition(l)
-                l.expect_eol()
-                return (condition,newcondition)
+                    condition = parse_condition(l)
+
+                    if l.keyword('to') is None:
+                        if is_If:
+                            l.error("`change condition` statement does not support specifiers in this position -- expected 'to' keyword.")
+                        else:
+                            l.error("Expected 'to' keyword to complete 'change' statement.")
+
+                    newcondition = parse_condition(l)
+                    l.expect_eol()
+                    return (condition,newcondition)
 
             def execute(dat):
-                condition,newcondition = dat
                 n = renpy.python.store_dicts["store"][hn]
                 if n is None:
                     error("The current node must already be defined to 'change' a branch on it. Try running a 'find' in this file first!")
+                if len(dat) > 2:
+                    if not isinstance(n,ast.Menu):
+                        error("'change option' statements are not supported on %r."%node_print_formatter(n))
+                    for i,(choice,condition,block) in enumerate(n.items):
+                        if choice == dat[0]:
+                            if dat[2] == "condition":
+                                n.items[i] = (choice,dat[1],block)
+                            elif dat[2] == "text":
+                                n.items[i] = (dat[1],condition,block)
+                            elif dat[2] == "label":
+                                from modloader.modast import find_label
+                                n.items[i] = (choice,condition,[find_label(dat[1])])
+                            else:
+                                error("Invalid 'change option' statement at init-time. Please contact the developer of the LinkMod modtool with your test case.")
+                            return
+                    error("Could not find option %r in menu %r."%(dat[0],node_print_formatter(n)))
                 elif isinstance(n,ast.Menu):
-                    # TODO: Support changing conditions here. May require separating 'change option' code from 'change cond'
+                    condition,newcondition = dat # Old `change` behaviour for menus. (Ew.)
                     for i, (label, src, block) in enumerate(n.items):
                         if label == condition:
                             if newcondition == 'False':
@@ -509,6 +551,7 @@ python early hide:
                             return
                     error("I couldn't find a menu item labeled %r in the menu %r!"%(condition,node_print_formatter(n)))
                 elif isinstance(n,ast.If):
+                    condition,newcondition = dat
                     for i,e in enumerate(n.entries):
                         if e[0] == condition:
                             n.entries[i] = (newcondition, e[1])
