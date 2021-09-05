@@ -177,7 +177,39 @@ python early hide:
                     error("I can't branch into a %r!"%type(n))
 
             def search(typ,n,content,depth):
-                from modloader.modast import search_for_node_with_criteria, search_for_node_type
+                from modloader.modast import ASTHook
+                def search_for_node_with_criteria_skipmods(node, func, max_depth=200):
+                    while max_depth > 0:
+                        if not isinstance(node, ASTHook):
+                            max_depth -= 1
+
+                        if isinstance(node, ASTHook):
+                            node = node.old_next
+                        else:
+                            node = node.next
+
+                        if node is None:
+                            break
+                        if func(node):
+                            return node
+                    return None
+                
+                def search_for_node_type_skipmods(node, type_, max_depth=200):
+                    while max_depth > 0:
+                        if not isinstance(node, ASTHook):
+                            max_depth -= 1
+
+                        if isinstance(node, ASTHook):
+                            node = node.old_next
+                        else:
+                            node = node.next
+
+                        if node is None:
+                            break
+                        if isinstance(node, type_):
+                            return node
+                    return None
+
                 if not content:
                     type = \
                         {'say':ast.Say
@@ -192,7 +224,7 @@ python early hide:
                         }.get(typ,None)
                     if type is None:
                         error("Unrecognized 'search' target: %r"%type)
-                    found = search_for_node_type(n,type,max_depth=depth)
+                    found = search_for_node_type_skipmods(n,type,max_depth=depth)
                 else:
                     criteria = \
                         {'say':lambda x: isinstance(x,ast.Say) and x.what==content
@@ -206,7 +238,7 @@ python early hide:
                         }.get(typ,None)
                     if criteria is None:
                         error("Unrecognized 'search' target: %r" % typ)
-                    found = search_for_node_with_criteria(n,criteria,max_depth=depth)
+                    found = search_for_node_with_criteria_skipmods(n,criteria,max_depth=depth)
                 
                 if found is None:
                     error("Failed to locate a node from 'search %s' with content\n%r\nstarting from node %s\nand searching for %u nodes.\nPerhaps another mod interfered with the structure of this scene?"%(typ,content,node_print_formatter(n),depth))
